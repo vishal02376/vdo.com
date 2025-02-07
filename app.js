@@ -1,3 +1,30 @@
+const express = require('express');
+const youtubedl = require('youtube-dl-exec');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+
+// Initialize the Express app
+const app = express();
+const port = process.env.PORT || 5000; // Use environment variable for port
+
+// Enable CORS
+app.use(cors({
+    origin: 'https://vdonet.netlify.app', // Allow requests from your Netlify frontend
+    credentials: true,
+}));
+
+// Ensure the downloads directory exists
+const downloadsDir = path.join(__dirname, 'downloads');
+if (!fs.existsSync(downloadsDir)) {
+    fs.mkdirSync(downloadsDir);
+}
+
+// Track the number of active downloads
+let activeDownloads = 0;
+const MAX_ACTIVE_DOWNLOADS = 5; // Set the maximum number of simultaneous downloads
+
+// Endpoint for progress updates
 app.get('/api/video/progress', (req, res) => {
     const { videoLink, format = 'mp4' } = req.query;
 
@@ -82,4 +109,32 @@ app.get('/api/video/progress', (req, res) => {
         activeDownloads--;
         console.log(`Active downloads: ${activeDownloads}`);
     });
+});
+
+// Endpoint to download the file
+app.get('/api/video/download', (req, res) => {
+    const { filename } = req.query;
+
+    if (!filename) {
+        return res.status(400).json({ error: "Filename is required" });
+    }
+
+    const filePath = path.join(downloadsDir, filename);
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found" });
+    }
+
+    // Set headers for the download
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+
+    // Stream the file to the client
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+});
+
+// Start the server
+app.listen(port, () => {
+    console.log(`✅ Server running on port ${port}`);
 });
