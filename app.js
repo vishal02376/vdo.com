@@ -4,9 +4,12 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const app = express();
-const port = 5000;
+const port = process.env.PORT || 5000; // Use environment variable for port
 
-app.use(cors()); // Enable CORS
+app.use(cors({
+    origin: 'https://your-frontend-domain.com', // Replace with your frontend domain
+    credentials: true,
+}));
 
 // Ensure the downloads directory exists
 const downloadsDir = path.join(__dirname, 'downloads');
@@ -91,7 +94,7 @@ app.get('/api/video/progress', (req, res) => {
         console.log("Download process closed with code:", code);
         if (code === 0) {
             // Send the download link to the client
-            const downloadLink = `http://localhost:5000/api/video/download?filename=${filename}`;
+            const downloadLink = `https://vdo-com.onrender.com/api/video/download?filename=${filename}`;
             res.write(`data: ${JSON.stringify({ completed: true, downloadLink })}\n\n`);
         } else {
             res.write(`data: ${JSON.stringify({ error: "Download failed" })}\n\n`);
