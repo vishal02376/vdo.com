@@ -63,13 +63,12 @@ app.get('/api/video/progress', (req, res) => {
 
     // Use youtube-dl-exec to download the video
     const process = youtubedl.exec(videoLink, {
-        format: format === 'mp3' ? 'bestaudio' : 'best', // Use 'best' for best format
-        output: filePath, // Save to the specified file path
-        quiet: true, // Suppress unnecessary logs
-        noWarnings: true, // Suppress warnings
-        addHeader: ['referer:https://www.instagram.com'], // Add referer header
-        cookies: path.join(__dirname, 'cookies.txt'), // Use absolute path for cookies
-        
+        format: format === 'mp3' ? 'bestaudio' : 'best',
+        output: filePath,
+        quiet: true,
+        noWarnings: true,
+        addHeader: ['referer:https://www.instagram.com'],
+        cookiesFromBrowser: 'chrome', // Automatically extract cookies from Chrome
     });
    
 
