@@ -68,7 +68,7 @@ app.get('/api/video/progress', (req, res) => {
         quiet: true, // Suppress unnecessary logs
         noWarnings: true, // Suppress warnings
         addHeader: ['referer:https://www.instagram.com'], // Add referer header
-        cookies: 'cookies.txt', // Path to cookies file (if required)
+        cookies: 'cookies.txt', // Path to cookies file
     });
 
     console.log("Starting download process...");
