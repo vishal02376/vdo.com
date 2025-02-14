@@ -10,7 +10,7 @@ const port = process.env.PORT || 5000; // Use environment variable for port
 
 // Enable CORS
 app.use(cors({
-    origin: ['https://vdonet.netlify.app', 'http://localhost:3000'], // Allow requests from your Netlify frontend and localhost
+    origin: 'https://vdonet.netlify.app', // Allow requests from your Netlify frontend
     credentials: true,
 }));
 
@@ -57,15 +57,21 @@ app.get('/api/video/progress', (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    // Generate a unique filename
+    const filename = `video_${Date.now()}.${format}`;
+    const filePath = path.join(downloadsDir, filename);
+
     // Use youtube-dl-exec to download the video
     const process = youtubedl.exec(videoLink, {
         format: format === 'mp3' ? 'bestaudio' : 'best', // Use 'best' for best format
-        output: '-', // Stream output to stdout
+        output: filePath, // Save to the specified file path
         quiet: true, // Suppress unnecessary logs
         noWarnings: true, // Suppress warnings
         addHeader: ['referer:https://www.instagram.com'], // Add referer header
         cookies: path.join(__dirname, 'cookies.txt'), // Use absolute path for cookies
+        
     });
+   
 
     console.log("Starting download process...");
 
@@ -78,9 +84,6 @@ app.get('/api/video/progress', (req, res) => {
             res.write(`data: ${JSON.stringify({ progress })}\n\n`); // Send progress to client
         }
     });
-
-    // Stream the output directly to the response
-    process.stdout.pipe(res);
 
     // Handle errors
     process.on('error', (error) => {
@@ -96,9 +99,11 @@ app.get('/api/video/progress', (req, res) => {
     process.on('close', (code) => {
         console.log("Download process closed with code:", code);
         if (code === 0) {
-            res.write(`data: ${JSON.stringify({ completed: true })}\n\n`); // Send completion event
+            // Send the download link to the client
+            const downloadLink = `https://vdo-com.onrender.com/api/video/download?filename=${filename}`;
+            res.write(`data: ${JSON.stringify({ completed: true, downloadLink })}\n\n`);
         } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed" })}\n\n`); // Send error event
+            res.write(`data: ${JSON.stringify({ error: "Download failed" })}\n\n`);
         }
         res.end(); // End the SSE connection
 
