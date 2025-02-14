@@ -61,17 +61,18 @@ app.get('/api/video/progress', (req, res) => {
     const filename = `video_${Date.now()}.${format}`;
     const filePath = path.join(downloadsDir, filename);
 
-    // Use youtube-dl-exec to download the video
-    const process = youtubedl.exec(videoLink, {
+    // Options for youtube-dl-exec
+    const options = {
         format: format === 'mp3' ? 'bestaudio' : 'best', // Use 'best' for best format
         output: filePath, // Save to the specified file path
         quiet: true, // Suppress unnecessary logs
         noWarnings: true, // Suppress warnings
         addHeader: ['referer:https://www.instagram.com'], // Add referer header
-        cookies: path.join(__dirname, 'cookies.txt'), // Use absolute path for cookies
-        
-    });
-   
+        cookiesFromBrowser: 'chrome', // Fetch cookies from Chrome
+    };
+
+    // Use youtube-dl-exec to download the video
+    const process = youtubedl.exec(videoLink, options);
 
     console.log("Starting download process...");
 
@@ -103,7 +104,7 @@ app.get('/api/video/progress', (req, res) => {
             const downloadLink = `https://vdo-com.onrender.com/api/video/download?filename=${filename}`;
             res.write(`data: ${JSON.stringify({ completed: true, downloadLink })}\n\n`);
         } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed" })}\n\n`);
+            res.write(`data: ${JSON.stringify({ error: "Download failed. Please check the link or try again later." })}\n\n`);
         }
         res.end(); // End the SSE connection
 
