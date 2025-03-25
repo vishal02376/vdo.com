@@ -1,105 +1,105 @@
-const youtubedl = require('youtube-dl-exec');
-const path = require('path');
+const { exec } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 
 // Track active downloads
 let activeDownloads = 0;
 const MAX_ACTIVE_DOWNLOADS = 5;
 
-/**
- * Downloads Instagram Reel
- * @param {Request} req - Express request object
- * @param {Response} res - Express response object
- */
 const downloadInstagramReel = async (req, res) => {
     const { url } = req.query;
 
-    // Validate URL
-    if (!url || !url.includes('instagram.com/reel/') && !url.includes('instagram.com/p/')) {
+    if (!url || (!url.includes('instagram.com/reel/') && !url.includes('instagram.com/p/'))) {
         return res.status(400).json({ error: "Invalid Instagram Reel URL" });
     }
 
-    // Check if server is busy
     if (activeDownloads >= MAX_ACTIVE_DOWNLOADS) {
-        return res.status(429).json({ error: "Server busy. Try again later." });
+        return res.status(429).json({ error: "Server busy. Please try again later." });
     }
 
     activeDownloads++;
     console.log(`📥 Active Downloads: ${activeDownloads}`);
 
     try {
-        // Step 1: Extract video info
-        const info = await youtubedl(url, {
-            dumpSingleJson: true,
-            noWarnings: true,
-            addHeader: [
-                'referer:instagram.com',
-                'origin:instagram.com'
-            ]
-        });
-
-        // Step 2: Get best quality video URL
-        const videoUrl = info.url || (info.formats && info.formats[info.formats.length - 1]?.url);
-        if (!videoUrl) {
-            throw new Error("No video URL found.");
+        // Ensure downloads directory exists
+        const downloadsDir = path.join(__dirname, '../downloads');
+        if (!fs.existsSync(downloadsDir)) {
+            fs.mkdirSync(downloadsDir);
         }
 
-        // Step 3: Generate filename
+        // Generate filename
         const filename = `reel_${Date.now()}.mp4`;
-        const filePath = path.join(__dirname, '../downloads', filename);
+        const filePath = path.join(downloadsDir, filename);
 
-        // Step 4: Download the video
-        await youtubedl.exec(videoUrl, {
-            output: filePath,
-            noWarnings: true,
-            addHeader: [
-                'referer:instagram.com',
-                'origin:instagram.com'
-            ]
+        console.log("⬇️ Starting download...");
+        
+        // Using yt-dlp directly
+        const command = `yt-dlp "${url}" -f best -o "${filePath}" --add-header "Referer:https://www.instagram.com" --add-header "Origin:https://www.instagram.com" --no-check-certificate`;
+
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                console.error("❌ Download failed:", error);
+                return res.status(500).json({ 
+                    error: "Failed to download reel",
+                    details: error.message
+                });
+            }
+            
+            if (stderr) {
+                console.error("⚠️ Warning:", stderr);
+            }
+
+            console.log("✅ Download complete:", stdout);
+            const downloadLink = `${req.protocol}://${req.get('host')}/api/download?filename=${filename}`;
+            res.json({ 
+                success: true, 
+                downloadLink,
+                info: {
+                    filename: filename,
+                    message: "Download completed successfully"
+                }
+            });
         });
 
-        // Step 5: Send download link
-        const downloadLink = `${req.protocol}://${req.get('host')}/api/download?filename=${filename}`;
-        res.json({ success: true, downloadLink });
-
     } catch (error) {
-        console.error("❌ Error:", error.message);
-        res.status(500).json({ error: "Failed to download reel." });
+        console.error("❌ Error:", error);
+        res.status(500).json({ 
+            error: "An unexpected error occurred",
+            details: error.message
+        });
     } finally {
         activeDownloads--;
         console.log(`📥 Active Downloads: ${activeDownloads}`);
     }
 };
 
-/**
- * Handles file download
- * @param {Request} req 
- * @param {Response} res 
- */
 const downloadFile = (req, res) => {
     const { filename } = req.query;
 
     if (!filename) {
-        return res.status(400).json({ error: "Filename is required." });
+        return res.status(400).json({ error: "Filename is required" });
     }
 
     const filePath = path.join(__dirname, '../downloads', filename);
 
     if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: "File not found." });
+        return res.status(404).json({ error: "File not found" });
     }
 
-    res.download(filePath, (err) => {
+    res.download(filePath, filename, (err) => {
         if (err) {
             console.error("❌ Download failed:", err);
-            res.status(500).json({ error: "Download failed." });
         } else {
-            // Delete file after download
+            // Delete file after successful download
             fs.unlink(filePath, (err) => {
-                if (err) console.error("⚠️ Could not delete file:", err);
+                if (err) console.error("⚠️ Error deleting file:", err);
+                else console.log("🗑️ File deleted successfully");
             });
         }
     });
 };
 
-module.exports = { downloadInstagramReel, downloadFile };
+module.exports = { 
+    downloadInstagramReel,  
+    downloadFile 
+};
