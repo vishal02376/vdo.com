@@ -1,117 +1,105 @@
 const youtubedl = require('youtube-dl-exec');
 const path = require('path');
+const fs = require('fs');
 
-// Function to handle progress updates
-const getProgress = (req, res) => {
-    const { videoLink, format = 'mp4' } = req.query;
+// Track active downloads
+let activeDownloads = 0;
+const MAX_ACTIVE_DOWNLOADS = 5;
 
-    console.log("Received request for progress updates:", videoLink, "Format:", format);
+/**
+ * Downloads Instagram Reel
+ * @param {Request} req - Express request object
+ * @param {Response} res - Express response object
+ */
+const downloadInstagramReel = async (req, res) => {
+    const { url } = req.query;
 
-    if (!videoLink) {
-        console.error("Video link is required");
-        return res.status(400).json({ error: "Video link is required" });
+    // Validate URL
+    if (!url || !url.includes('instagram.com/reel/') && !url.includes('instagram.com/p/')) {
+        return res.status(400).json({ error: "Invalid Instagram Reel URL" });
     }
 
-    // Validate the video link
-    const isValidLink = videoLink.includes('youtube.com') || videoLink.includes('youtu.be') || videoLink.includes('instagram.com');
-    if (!isValidLink) {
-        console.error("Invalid or unsupported video link:", videoLink);
-        return res.status(400).json({ error: "Invalid or unsupported video link" });
+    // Check if server is busy
+    if (activeDownloads >= MAX_ACTIVE_DOWNLOADS) {
+        return res.status(429).json({ error: "Server busy. Try again later." });
     }
 
-    // Set headers for Server-Sent Events (SSE)
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    activeDownloads++;
+    console.log(`📥 Active Downloads: ${activeDownloads}`);
 
-    // Use youtube-dl-exec to download the video
-    const process = youtubedl.exec(videoLink, {
-        format: format === 'mp3' ? 'bestaudio' : 'best', // Use 'best' for best format
-        output: '-', // Output to stdout
-        quiet: true, // Suppress unnecessary logs
-        noWarnings: true, // Suppress warnings
-    });
+    try {
+        // Step 1: Extract video info
+        const info = await youtubedl(url, {
+            dumpSingleJson: true,
+            noWarnings: true,
+            addHeader: [
+                'referer:instagram.com',
+                'origin:instagram.com'
+            ]
+        });
 
-    console.log("Starting download process...");
-
-    // Send progress updates to the client
-    process.stderr.on('data', (data) => {
-        const progressMatch = data.toString().match(/\[download\]\s+(\d+\.\d+)%/);
-        if (progressMatch) {
-            const progress = parseFloat(progressMatch[1]);
-            res.write(`data: ${JSON.stringify({ progress })}\n\n`); // Send progress to client
+        // Step 2: Get best quality video URL
+        const videoUrl = info.url || (info.formats && info.formats[info.formats.length - 1]?.url);
+        if (!videoUrl) {
+            throw new Error("No video URL found.");
         }
-    });
 
-    // Handle errors
-    process.on('error', (error) => {
-        console.error("❌ Error downloading video:", error);
-        res.write(`data: ${JSON.stringify({ error: "Failed to process the request" })}\n\n`);
-        res.end();
-    });
+        // Step 3: Generate filename
+        const filename = `reel_${Date.now()}.mp4`;
+        const filePath = path.join(__dirname, '../downloads', filename);
 
-    process.on('close', (code) => {
-        console.log("Download process closed with code:", code);
-        if (code === 0) {
-            res.write(`data: ${JSON.stringify({ completed: true })}\n\n`); // Send completion event
+        // Step 4: Download the video
+        await youtubedl.exec(videoUrl, {
+            output: filePath,
+            noWarnings: true,
+            addHeader: [
+                'referer:instagram.com',
+                'origin:instagram.com'
+            ]
+        });
+
+        // Step 5: Send download link
+        const downloadLink = `${req.protocol}://${req.get('host')}/api/download?filename=${filename}`;
+        res.json({ success: true, downloadLink });
+
+    } catch (error) {
+        console.error("❌ Error:", error.message);
+        res.status(500).json({ error: "Failed to download reel." });
+    } finally {
+        activeDownloads--;
+        console.log(`📥 Active Downloads: ${activeDownloads}`);
+    }
+};
+
+/**
+ * Handles file download
+ * @param {Request} req 
+ * @param {Response} res 
+ */
+const downloadFile = (req, res) => {
+    const { filename } = req.query;
+
+    if (!filename) {
+        return res.status(400).json({ error: "Filename is required." });
+    }
+
+    const filePath = path.join(__dirname, '../downloads', filename);
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "File not found." });
+    }
+
+    res.download(filePath, (err) => {
+        if (err) {
+            console.error("❌ Download failed:", err);
+            res.status(500).json({ error: "Download failed." });
         } else {
-            res.write(`data: ${JSON.stringify({ error: "Download failed" })}\n\n`); // Send error event
-        }
-        res.end(); // End the SSE connection
-    });
-};
-
-// Function to handle file download
-const downloadVideo = (req, res) => {
-    const { videoLink, format = 'mp4' } = req.query;
-
-    console.log("Received request to download:", videoLink, "Format:", format);
-
-    if (!videoLink) {
-        console.error("Video link is required");
-        return res.status(400).json({ error: "Video link is required" });
-    }
-
-    // Validate the video link
-    const isValidLink = videoLink.includes('youtube.com') || videoLink.includes('youtu.be') || videoLink.includes('instagram.com');
-    if (!isValidLink) {
-        console.error("Invalid or unsupported video link:", videoLink);
-        return res.status(400).json({ error: "Invalid or unsupported video link" });
-    }
-
-    // Set headers for the download
-    res.setHeader('Content-Disposition', `attachment; filename="video.${format}"`);
-    res.setHeader('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
-
-    // Use youtube-dl-exec to download the video
-    const process = youtubedl.exec(videoLink, {
-        format: format === 'mp3' ? 'bestaudio' : 'best', // Use 'best' for best format
-        output: '-', // Output to stdout
-        quiet: true, // Suppress unnecessary logs
-        noWarnings: true, // Suppress warnings
-    });
-
-    console.log("Starting download process...");
-
-    // Stream the output directly to the response
-    process.stdout.pipe(res);
-
-    // Handle errors
-    process.on('error', (error) => {
-        console.error("❌ Error downloading video:", error);
-        res.status(500).json({ error: "Failed to process the request" });
-    });
-
-    process.stderr.on('data', (data) => {
-        console.error("❌ Error:", data.toString());
-    });
-
-    process.on('close', (code) => {
-        console.log("Download process closed with code:", code);
-        if (code !== 0) {
-            res.status(500).json({ error: "Download failed" });
+            // Delete file after download
+            fs.unlink(filePath, (err) => {
+                if (err) console.error("⚠️ Could not delete file:", err);
+            });
         }
     });
 };
 
-module.exports = { downloadVideo, getProgress }; // Export both functions
+module.exports = { downloadInstagramReel, downloadFile };
